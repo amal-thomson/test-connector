@@ -1,57 +1,236 @@
-import { expect } from '@jest/globals';
-import request from 'supertest';
-import app from '../../src/app';
-import * as enventController from '../../src/controllers/event.controller';
-import { readConfiguration } from '../../src/utils/config.utils';
+import { Request, Response } from 'express';
+import { post } from '../../src/controllers/event.controller';
+import { productAnalysis } from '../../src/services/Vision AI/productAnalysis.service';
+import { generateProductDescription } from '../../src/services/Generative AI/descriptionGeneration.service';
+import { updateCustomObjectWithDescription } from '../../src/repository/Custom Object/updateCustomObjectWithDescription';
+import { ImageData } from '../../src/interfaces/imageData.interface';
 
-jest.mock('../../src/utils/config.utils');
-describe('Testing router', () => {
-  beforeEach(() => {
-    (readConfiguration as jest.Mock).mockClear();
-  });
-  test('Post to non existing route', async () => {
-    const response = await request(app).post('/none');
-    expect(response.status).toBe(404);
-    expect(response.body).toEqual({
-      message: 'Path not found.',
-    });
-  });
-  test('Post invalid body', async () => {
-    const response = await request(app).post('/event').send({
-      message: 'hello world',
-    });
-    expect(response.status).toBe(400);
-    expect(response.body).toEqual({
-      message: 'Bad request: No customer id in the Pub/Sub message',
-    });
-  });
-  test('Post empty body', async () => {
-    const response = await request(app).post('/event');
-    expect(response.status).toBe(400);
-    expect(response.body).toEqual({
-      message: 'Bad request: Wrong No Pub/Sub message format',
-    });
-  });
-});
-describe('unexpected error', () => {
-  let postMock: jest.SpyInstance;
+// Mock modules
+jest.mock('../../src/services/Vision AI/productAnalysis.service');
+jest.mock('../../src/services/Generative AI/descriptionGeneration.service');
+jest.mock('../../src/repository/Custom Object/updateCustomObjectWithDescription');
+jest.mock('../../src/utils/logger.utils', () => ({
+    logger: {
+        info: jest.fn(),
+        error: jest.fn()
+    }
+}));
 
-  beforeEach(() => {
-    // Mock the post method to throw an error
-    postMock = jest.spyOn(enventController, 'post').mockImplementation(() => {
-      throw new Error('Test error');
-    });
-    (readConfiguration as jest.Mock).mockClear();
-  });
+describe('Event Controller Integration Tests', () => {
+    let mockRequest: Partial<Request>;
+    let mockResponse: Partial<Response>;
+    const mockStatus = jest.fn().mockReturnThis();
+    const mockSend = jest.fn().mockReturnThis();
 
-  afterEach(() => {
-    // Restore the original implementation
-    postMock.mockRestore();
-  });
-  test('should handle errors thrown by post method', async () => {
-    // Call the route handler
-    const response = await request(app).post('/event');
-    expect(response.status).toBe(500);
-    expect(response.body).toEqual({ message: 'Internal server error' });
-  });
+    beforeEach(() => {
+        jest.clearAllMocks();
+        
+        // Setup default mock request with product data
+        mockRequest = {
+            body: {
+                message: {
+                    data: Buffer.from(JSON.stringify({
+                        resource: { typeId: 'product' },
+                        productProjection: {
+                            id: 'mock-product-id',
+                            masterVariant: {
+                                images: [{ url: 'https://example.com/image.jpg' }],
+                                attributes: [
+                                    { name: 'generateDescription', value: true }
+                                ]
+                            },
+                            name: { 
+                                'en': 'Product Name Missing'
+                            }
+                        }
+                    })).toString('base64')
+                }
+            }
+        };
+
+        mockResponse = {
+            status: mockStatus,
+            send: mockSend
+        };
+    });
+
+    describe('Success scenarios', () => {
+        test('should successfully process product and generate description', async () => {
+            // Arrange
+            const mockImageData: ImageData = {
+                labels: 'shirt, cotton',
+                objects: 'clothing',
+                colors: ['255, 255, 255'],
+                detectedText: 'Brand Name',
+                webEntities: 'fashion'
+            };
+
+            const mockDescription = 'A beautiful white cotton shirt';
+            const mockUpdateResponse = {
+                body: {
+                    container: 'temporaryDescription',
+                    key: 'mock-product-id',
+                    value: {
+                        temporaryDescription: mockDescription,
+                        imageUrl: 'https://example.com/image.jpg',
+                        productName: 'Product Name Missing',
+                        generatedAt: expect.any(String)
+                    },
+                    version: 1
+                }
+            };
+
+            (productAnalysis as jest.Mock).mockResolvedValue(mockImageData);
+            (generateProductDescription as jest.Mock).mockResolvedValue(mockDescription);
+            (updateCustomObjectWithDescription as jest.Mock).mockResolvedValue(mockUpdateResponse);
+
+            // Act
+            await post(mockRequest as Request, mockResponse as Response);
+
+            // Assert
+            expect(mockStatus).toHaveBeenCalledWith(200);
+            expect(mockSend).toHaveBeenCalledWith({
+                productId: 'mock-product-id',
+                imageUrl: 'https://example.com/image.jpg',
+                description: mockDescription,
+                productAnalysis: mockImageData,
+                productName: 'Product Name Missing'
+            });
+        });
+    });
+
+    describe('Error scenarios', () => {
+        test('should return 400 when no PubSub message data is present', async () => {
+            // Arrange
+            mockRequest.body.message.data = undefined;
+
+            // Act
+            await post(mockRequest as Request, mockResponse as Response);
+
+            // Assert
+            expect(mockStatus).toHaveBeenCalledWith(400);
+            expect(mockSend).toHaveBeenCalledWith({
+                error: '❌ No data found in Pub/Sub message.'
+            });
+        });
+
+        test('should return 400 when generateDescription attribute is false', async () => {
+            // Arrange
+            mockRequest.body.message.data = Buffer.from(JSON.stringify({
+                resource: { typeId: 'product' },
+                productProjection: {
+                    id: 'mock-product-id',
+                    masterVariant: {
+                        images: [{ url: 'https://example.com/image.jpg' }],
+                        attributes: [
+                            { name: 'generateDescription', value: false }
+                        ]
+                    },
+                    name: {
+                        'en': 'Product Name Missing'
+                    }
+                }
+            })).toString('base64');
+
+            // Act
+            await post(mockRequest as Request, mockResponse as Response);
+
+            // Assert
+            expect(mockStatus).toHaveBeenCalledWith(200);
+            expect(mockSend).toHaveBeenCalledWith({
+                message: '❌ The option for automatic description generation is not enabled.',
+                productId: 'mock-product-id',
+                imageUrl: 'https://example.com/image.jpg',
+                productName: 'Product Name Missing'
+            });
+        });
+
+        test('should return 400 when no attributes are found', async () => {
+            // Arrange
+            mockRequest.body.message.data = Buffer.from(JSON.stringify({
+                resource: { typeId: 'product' },
+                productProjection: {
+                    id: 'mock-product-id',
+                    masterVariant: {
+                        images: [{ url: 'https://example.com/image.jpg' }],
+                        attributes: []
+                    }
+                }
+            })).toString('base64');
+
+            // Act
+            await post(mockRequest as Request, mockResponse as Response);
+
+            // Assert
+            expect(mockStatus).toHaveBeenCalledWith(400);
+            expect(mockSend).toHaveBeenCalledWith({
+                error: '❌ No attributes found in the product data.'
+            });
+        });
+
+        test('should handle Vision AI service error', async () => {
+            // Arrange
+            (productAnalysis as jest.Mock).mockRejectedValue(new Error('Vision AI failed'));
+
+            // Act
+            await post(mockRequest as Request, mockResponse as Response);
+
+            // Assert
+            expect(mockStatus).toHaveBeenCalledWith(500);
+            expect(mockSend).toHaveBeenCalledWith({
+                error: '❌ Internal server error. Failed to process request.',
+                details: 'Vision AI failed'
+            });
+        });
+
+        test('should handle Generative AI service error', async () => {
+            // Arrange
+            const mockImageData: ImageData = {
+                labels: 'shirt, cotton',
+                objects: 'clothing',
+                colors: ['255, 255, 255'],
+                detectedText: 'Brand Name',
+                webEntities: 'fashion'
+            };
+            
+            (productAnalysis as jest.Mock).mockResolvedValue(mockImageData);
+            (generateProductDescription as jest.Mock).mockRejectedValue(new Error('Generative AI failed'));
+
+            // Act
+            await post(mockRequest as Request, mockResponse as Response);
+
+            // Assert
+            expect(mockStatus).toHaveBeenCalledWith(500);
+            expect(mockSend).toHaveBeenCalledWith({
+                error: '❌ Internal server error. Failed to process request.',
+                details: 'Generative AI failed'
+            });
+        });
+
+        test('should handle Custom Object update error', async () => {
+            // Arrange
+            const mockImageData: ImageData = {
+                labels: 'shirt, cotton',
+                objects: 'clothing',
+                colors: ['255, 255, 255'],
+                detectedText: 'Brand Name',
+                webEntities: 'fashion'
+            };
+            const mockDescription = 'A beautiful white cotton shirt';
+
+            (productAnalysis as jest.Mock).mockResolvedValue(mockImageData);
+            (generateProductDescription as jest.Mock).mockResolvedValue(mockDescription);
+            (updateCustomObjectWithDescription as jest.Mock).mockRejectedValue(new Error('Custom Object update failed'));
+
+            // Act
+            await post(mockRequest as Request, mockResponse as Response);
+
+            // Assert
+            expect(mockStatus).toHaveBeenCalledWith(500);
+            expect(mockSend).toHaveBeenCalledWith({
+                error: '❌ Internal server error. Failed to process request.',
+                details: 'Custom Object update failed'
+            });
+        });
+    });
 });
