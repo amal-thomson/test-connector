@@ -1,14 +1,14 @@
 
 // tests/repository/Custom Object/updateCustomObjectWithDescription.test.ts
-import { updateCustomObjectWithDescription } from '../../../src/repository/Custom Object/updateCustomObjectWithDescription';
+import { updateCustomObjectWithDescription } from './Custom Object/updateCustomObjectWithDescription';
 
 // Mock the entire client module
-jest.mock('../../../src/client/create.client', () => ({
+jest.mock('../../src/client/create.client', () => ({
   createApiRoot: jest.fn()
 }));
 
 // Mock the logger
-jest.mock('../../../src/utils/logger.utils', () => ({
+jest.mock('../../src/utils/logger.utils', () => ({
   logger: {
     info: jest.fn(),
     error: jest.fn()
@@ -16,7 +16,7 @@ jest.mock('../../../src/utils/logger.utils', () => ({
 }));
 
 // Mock the config utils
-jest.mock('../../../src/utils/config.utils', () => ({
+jest.mock('../../src/utils/config.utils', () => ({
   readConfiguration: jest.fn().mockReturnValue({
     projectKey: 'test-project',
     clientId: 'test-client',
@@ -42,7 +42,7 @@ describe('Update Custom Object Repository', () => {
   }));
 
   beforeEach(() => {
-    const { createApiRoot } = require('../../../src/client/create.client');
+    const { createApiRoot } = require('../../src/client/create.client');
     (createApiRoot as jest.Mock).mockReturnValue({
       customObjects: mockCustomObjects
     });

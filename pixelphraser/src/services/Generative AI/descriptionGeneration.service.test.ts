@@ -1,7 +1,7 @@
 
 // tests/services/descriptionGeneration.service.test.ts
-import { generateProductDescription } from '../../../src/services/Generative AI/descriptionGeneration.service';
-import { model } from '../../../src/config/ai.config';
+import { generateProductDescription } from './descriptionGeneration.service';
+import { model } from '../../config/ai.config';
 
 jest.mock('../../../src/config/ai.config');
 jest.mock('../../../src/utils/logger.utils');

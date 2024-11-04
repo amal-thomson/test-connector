@@ -1,10 +1,10 @@
 // tests/controllers/event.controller.test.ts
 import { Request, Response } from 'express';
-import { post } from '../../src/controllers/event.controller';
-import { productAnalysis } from '../../src/services/Vision AI/productAnalysis.service';
-import { generateProductDescription } from '../../src/services/Generative AI/descriptionGeneration.service';
-import { createProductCustomObject } from '../../src/repository/Custom Object/createCustomObject.repository';
-import { updateCustomObjectWithDescription } from '../../src/repository/Custom Object/updateCustomObjectWithDescription';
+import { post } from './event.controller';
+import { productAnalysis } from '../services/Vision AI/productAnalysis.service';
+import { generateProductDescription } from '../services/Generative AI/descriptionGeneration.service';
+import { createProductCustomObject } from '../repository/Custom Object/createCustomObject.repository';
+import { updateCustomObjectWithDescription } from '../repository/Custom Object/updateCustomObjectWithDescription';
 
 jest.mock('../../src/services/Vision AI/productAnalysis.service');
 jest.mock('../../src/services/Generative AI/descriptionGeneration.service');

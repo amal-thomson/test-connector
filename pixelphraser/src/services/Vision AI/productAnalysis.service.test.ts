@@ -1,6 +1,6 @@
 // tests/services/productAnalysis.service.test.ts
-import { productAnalysis } from '../../../src/services/Vision AI/productAnalysis.service';
-import { visionClient } from '../../../src/config/ai.config';
+import { productAnalysis } from './productAnalysis.service';
+import { visionClient } from '../../config/ai.config';
 
 jest.mock('../../../src/config/ai.config');
 jest.mock('../../../src/utils/logger.utils');
